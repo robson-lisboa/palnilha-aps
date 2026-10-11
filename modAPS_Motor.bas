@@ -46,16 +46,54 @@ Private Const APS_FECHAR_VAOS_SEMPRE As Boolean = False
 
 '----------------------------------------------------------
 ' Relogio: a cada minuto confere se algum status mudou de faixa
+'----------------------------------------------------------
+' Relogio: a cada minuto confere se algum status mudou de faixa
 ' (Planejada > Em Andamento > Concluida) ou se 02_Operacoes foi alterada/excluida
 '----------------------------------------------------------
+' [CORRECAO PEN-B-18] Flag de estado do ultima operacao de agendamento/cancelamento.
+'   True  -> agendamento criado com sucesso ou cancelado com sucesso
+'   False -> agendamento nao criado, ou cancelamento falhou
+Private mProxCancelado As Boolean
+
 Public Sub APS_AgendarTick()
     ' Cancela o agendamento anterior (mesmo horario/procedimento) antes de criar outro: evita Ticks duplicados.
+    Dim cancelou As Boolean
+
     On Error Resume Next
-    If mProx <> 0 Then Application.OnTime mProx, "'" & ThisWorkbook.Name & "'!APS_Tick", , False
-    Err.Clear
-    mProx = Now + TimeSerial(0, 1, 0)
-    Application.OnTime mProx, "'" & ThisWorkbook.Name & "'!APS_Tick"
-    If Err.Number <> 0 Then mProx = 0: Err.Clear
+
+    If mProx <> 0 Then
+        Application.OnTime mProx, "'" & ThisWorkbook.Name & "'!APS_Tick", , False
+        If Err.Number = 0 Then
+            cancelou = True
+        Else
+            cancelou = False
+            Err.Clear
+        End If
+    Else
+        cancelou = True    ' nada a cancelar: consideramos o estado limpo
+    End If
+
+    mProxCancelado = cancelou
+
+    ' So cria um novo agendamento se o anterior foi cancelado com sucesso,
+    ' ou se nao havia agendamento anterior. Isso evita criar um segundo evento
+    ' enquanto o primeiro ainda pode estar ativo.
+    If cancelou Then
+        mProx = Now + TimeSerial(0, 1, 0)
+        Application.OnTime mProx, "'" & ThisWorkbook.Name & "'!APS_Tick"
+        If Err.Number <> 0 Then
+            mProx = 0
+            mProxCancelado = False
+            Err.Clear
+        Else
+            mProxCancelado = True
+        End If
+    Else
+        ' o cancelamento falhou: nao criamos um novo agendamento, pois o anterior
+        ' pode ainda estar ativo. Mantemos mProx inalterado para que a proxima
+        ' tentativa de APS_GarantirTick tente novamente.
+        Application.StatusBar = "APS: falha ao cancelar agendamento anterior do Tick."
+    End If
 End Sub
 
 Public Sub APS_GarantirTick()

@@ -934,9 +934,42 @@ Public Function APS_SincronizarSetups() As Boolean
     Dim durPar As Double, iniPar As Double, fimPar As Double
     Dim difHora As Boolean, difDados As Boolean
     Dim j As Long, lin As Long, achou As Boolean
+    Dim backups() As tBackupLinha, nBk As Long, iBk As Long
+    Dim falhaRecuperou As Boolean, msg As String
+
+    On Error GoTo Falha
 
     n = APS_LerOps(ops)
     If n <= 0 Then Exit Function
+
+    ' [PEN-B-21] Fase 1: identificar quais linhas serao sincronizadas e fazer backup antes de qualquer gravacao.
+    ReDim backups(1 To IIf(n < 1, 1, n))
+    nBk = 0
+    For i = 1 To n
+        If Len(ops(i).tipoAux) = 0 Then   ' i e producao
+            p = APS_AcharAuxDaProducao(ops, n, ops(i).id, APS_TIPO_SETUP)
+            If p = 0 Then p = APS_AcharAuxDaProducao(ops, n, ops(i).id, APS_TIPO_LIMPEZA)
+            If p > 0 Then
+                If Not APS_Ativa(ops(p)) Then p = 0
+            End If
+            If p > 0 Then
+                difHora = Abs(ops(p).fim - ops(i).ini) > APS_EPS
+                difDados = (Not APS_Ig(ops(p).maquina, ops(i).maquina)) Or _
+                           (StrComp(ops(p).Produto, ops(i).Produto, vbTextCompare) <> 0) Or _
+                           (StrComp(ops(p).lote, ops(i).lote, vbTextCompare) <> 0)
+                If difHora Or difDados Then
+                    nBk = nBk + 1
+                    If Not APS_BackupLinha(APS_Aba(APS_ABA_OPS), ops(p).linha, backups(nBk)) Then
+                        msg = msg & "Linha " & ops(p).linha & ": nao foi possivel fazer backup." & vbCrLf
+                    End If
+                End If
+            End If
+        End If
+    Next i
+
+    If Len(msg) > 0 Then
+        MsgBox "N" & ChrW(227) & "o foi poss" & ChrW(237) & "vel fazer backup de algumas linhas:" & vbCrLf & msg, vbExclamation, APS_TITULO
+    End If
 
     ' REPARO: Setup/Limpeza gravado com ID provisorio "R<linha>" cuja producao ja recebeu ID definitivo
     ' (o vinculo se perdia). Religa pela linha, conferindo o produto.
@@ -1013,6 +1046,18 @@ Public Function APS_SincronizarSetups() As Boolean
             End If
         End If
     Next i
+    Exit Function
+
+Falha:
+    ' [PEN-B-21] Em caso de erro, restaura todas as linhas backupadas antes de sair.
+    On Error Resume Next
+    For iBk = 1 To nBk
+        APS_RestaurarLinha APS_Aba(APS_ABA_OPS), backups(iBk)
+    Next iBk
+    MsgBox "Falha durante a sincroniza" & ChrW(231) & ChrW(227) & "o de setups: " & Err.Description & vbCrLf & _
+           "Todas as linhas alteradas foram restauradas ao estado original.", vbCritical, APS_TITULO
+    Err.Clear
+    falhaRecuperou = True
 End Function
 
 ' INICIO DO PROCESSO da producao k: o inicio do SETUP vinculado (quando ele precede a
@@ -1568,7 +1613,14 @@ Public Function APS_NovoID() As String
 
     v = IdBase() + 1
     APS_CfgGravar "PROXID", CStr(v)
-    APS_NovoID = CStr(v)
+
+    ' confirma que o contrario foi gravado antes de entregar o ID
+    If CLng(Val(APS_CfgLer("PROXID", "0"))) = v Then
+        APS_NovoID = CStr(v)
+    Else
+        ' falha ao persistir o contrario: nao devemos entregar um ID cujo registro nao pode ser confirmado
+        APS_NovoID = ""
+    End If
 End Function
 
 ' Garante que o contador nunca fique atras de um ID ja gravado
@@ -2388,6 +2440,9 @@ Falha:
 
     On Error Resume Next
 
+    ' [CORRECAO] O APS_Ocupado foi adquirido antes da limpeza (linha 2419).
+    ' Em caso de erro, restaura o counter e a protecao da planilha antes de sair.
+    APS_Ocupado = APS_Ocupado - 1
     If Not ws Is Nothing Then
         APS_Reproteger ws, est
     End If
@@ -2400,23 +2455,35 @@ End Function
 ' [ADAPTACAO modelo novo] True se existe, em 02_Operacoes, uma linha de DADOS cujo ID (coluna K)
 ' e idPai. Protege contra remover um Setup/Limpeza cuja producao existe mas foi ignorada por
 ' APS_LerOps (ex.: data/maquina apagada durante uma edicao). Sem como confirmar -> True (nao remove).
+' [CORRECAO PEN-B-05] Verifica se o idPai ainda aponta para uma producao real na planilha.
+' Diferenciamos tres situacoes:
+'   - productions real encontrada (tipoAux = 0 e com dados) -> nao e orfao
+'   - linha encontrada mas e Setup/Limpeza (tipoAux > 0) -> ambiguo, nao tratar como pai
+'   - nenhuma linha encontrada -> orfao
+' O padrao inicial e False (nao assume que o pai existe). A funcao so retorna True quando
+' encontra uma linha que claramente e uma producao.
 Private Function APS_PaiNaPlanilha(ByVal idPai As String) As Boolean
-    Dim ws As Worksheet, cId As Long, cPro As Long, cCod As Long, r As Long, ult As Long
+    Dim ws As Worksheet, cId As Long, cPro As Long, cCod As Long, cObs As Long, r As Long, ult As Long
+    Dim txObs As String
 
-    APS_PaiNaPlanilha = True
+    APS_PaiNaPlanilha = False
     Set ws = APS_Aba(APS_ABA_OPS)
     If ws Is Nothing Then Exit Function
     cId = APS_Col(ws, H_ID())
     cPro = APS_Col(ws, H_PRO())
     cCod = APS_Col(ws, H_COD())
+    cObs = APS_Col(ws, H_OBS())
     If cId = 0 Or (cPro = 0 And cCod = 0) Then Exit Function
 
-    APS_PaiNaPlanilha = False
-
-    ' ID provisorio "R<linha>": a producao existe se aquela linha tem dados
+    ' ID provisorio "R<linha>": a producao existe se aquela linha tem dados de producao
+    ' (e nao e uma linha de Setup/Limpeza, que teria marcador nas Observacoes).
     If UCase$(Left$(idPai, 1)) = "R" And IsNumeric(Mid$(idPai, 2)) And Len(idPai) <= 7 Then
         r = CLng(Mid$(idPai, 2))
         If r >= 2 Then
+            If cObs > 0 Then
+                txObs = APS_Txt(ws.Cells(r, cObs).Value)
+                If InStr(1, txObs, "[[APS_", vbTextCompare) > 0 Then Exit Function   ' linha e Setup/Limpeza, nao e pai
+            End If
             If cPro > 0 Then
                 If Len(APS_Txt(ws.Cells(r, cPro).Value)) > 0 Then APS_PaiNaPlanilha = True: Exit Function
             End If
@@ -2424,11 +2491,17 @@ Private Function APS_PaiNaPlanilha(ByVal idPai As String) As Boolean
                 If Len(APS_Txt(ws.Cells(r, cCod).Value)) > 0 Then APS_PaiNaPlanilha = True: Exit Function
             End If
         End If
+        Exit Function
     End If
 
     ult = ws.Cells(ws.Rows.Count, cId).End(xlUp).Row
     For r = 2 To ult
         If APS_Ig(APS_Txt(ws.Cells(r, cId).Value), idPai) Then
+            ' confirma que esta linha e de fato uma producao (tem dados e nao e Setup/Limpeza)
+            If cObs > 0 Then
+                txObs = APS_Txt(ws.Cells(r, cObs).Value)
+                If InStr(1, txObs, "[[APS_", vbTextCompare) > 0 Then GoTo Proximo   ' linha encontrada mas e Setup/Limpeza: nao e pai
+            End If
             If cPro > 0 Then
                 If Len(APS_Txt(ws.Cells(r, cPro).Value)) > 0 Then APS_PaiNaPlanilha = True: Exit Function
             End If
@@ -2436,6 +2509,7 @@ Private Function APS_PaiNaPlanilha(ByVal idPai As String) As Boolean
                 If Len(APS_Txt(ws.Cells(r, cCod).Value)) > 0 Then APS_PaiNaPlanilha = True: Exit Function
             End If
         End If
+Proximo:
     Next r
 End Function
 
@@ -2493,17 +2567,27 @@ End Function
 ' Nao mexe em tipoAux, idPai, rotAux, maquina, data, horario, duracao ou
 ' sequencia de nenhuma linha que NAO seja orfa. Nao chama APS_FecharVaos,
 ' APS_Encaixar nem cascata.
+' [CORRECAO PEN-B-06, PEN-B-20] Limpeza de setups orfaos com backup e rollback.
+' Antes de qualquer exclusao, faz backup completo de cada linha considerada orfao.
+' Em caso de erro intermediario, restaura todas as linhas backupadas.
+' A decisao de considerar uma linha como orfao segue os mesmos criterios de antes
+' (idPai inexistente em ops() e na planilha), com a validacao reforçada em
+' APS_PaiNaPlanilha (PEN-B-05): a linha encontrada na planilha precisa ser de
+' fato uma producao (tipoAux = 0 e sem marcador [[APS_ nas Observacoes)).
 Public Function APS_LimparSetupsOrfaos(ByRef ops() As tOperacao, ByVal n As Long) As Boolean
     Dim ws As Worksheet, est As Boolean
     Dim i As Long, j As Long, achouPai As Boolean
+    Dim backups() As tBackupLinha, nBk As Long, iBk As Long
+    Dim falhaRecuperou As Boolean, msg As String
 
     On Error GoTo Falha
 
     If n <= 0 Then Exit Function
 
+    ' [PEN-B-06] Fase 1: coletar backup de cada linha considerada orfao, antes de qualquer alteracao.
+    ReDim backups(1 To IIf(n < 1, 1, n))
+    nBk = 0
     For i = 1 To n
-        ' sem idPai = Setup/Limpeza no formato antigo (Codigo = SETUP/LIMPEZA, digitado a mao):
-        ' nao ha vinculo a verificar, entao nunca e tratado como orfao
         If Len(ops(i).tipoAux) > 0 And Len(Trim$(ops(i).idPai)) > 0 Then
             achouPai = False
             If Len(Trim$(ops(i).idPai)) > 0 Then
@@ -2529,12 +2613,51 @@ Public Function APS_LimparSetupsOrfaos(ByRef ops() As tOperacao, ByVal n As Long
                     est = APS_Liberar(ws)
                     APS_Ocupado = APS_Ocupado + 1
                 End If
-                APS_LimparLinha ws, ops(i).linha
-                APS_LimparSetupsOrfaos = True
+                nBk = nBk + 1
+                If Not APS_BackupLinha(ws, ops(i).linha, backups(nBk)) Then
+                    msg = msg & "Linha " & ops(i).linha & ": nao foi possivel fazer backup." & vbCrLf
+                End If
             End If
         End If
     Next i
 
+    If Len(msg) > 0 Then
+        MsgBox "N" & ChrW(227) & "o foi poss" & ChrW(237) & "vel fazer backup de algumas linhas:" & vbCrLf & msg, vbExclamation, APS_TITULO
+    End If
+
+    ' [PEN-B-06] Fase 2: aplica a limpeza.
+    For iBk = 1 To nBk
+        i = 0
+        For i = 1 To n
+            If ops(i).linha = backups(iBk).linha Then Exit For
+        Next i
+        If i > n Then GoTo ProximoBk
+
+        If Len(ops(i).tipoAux) > 0 And Len(Trim$(ops(i).idPai)) > 0 Then
+            achouPai = False
+            If Len(Trim$(ops(i).idPai)) > 0 Then
+                For j = 1 To n
+                    If j <> i Then
+                        If Len(ops(j).tipoAux) = 0 Then
+                            If APS_Ig(ops(j).id, ops(i).idPai) Then
+                                achouPai = True
+                                Exit For
+                            End If
+                        End If
+                    End If
+                Next j
+            End If
+            If Not achouPai Then achouPai = APS_PaiNaPlanilha(ops(i).idPai)
+
+            If Not achouPai Then
+                APS_LimparLinha ws, ops(i).linha
+                APS_LimparSetupsOrfaos = True
+            End If
+        End If
+ProximoBk:
+    Next iBk
+
+    ' [PEN-B-20] Sucesso: libera o APS_Ocupado adquirido na Fase 1 antes de sair.
     If Not ws Is Nothing Then
         APS_Ocupado = APS_Ocupado - 1
         APS_Reproteger ws, est
@@ -2542,7 +2665,17 @@ Public Function APS_LimparSetupsOrfaos(ByRef ops() As tOperacao, ByVal n As Long
     Exit Function
 
 Falha:
+    ' [PEN-B-20] Em caso de erro, restaura todas as linhas backupadas antes de sair.
     On Error Resume Next
+    For iBk = 1 To nBk
+        APS_RestaurarLinha ws, backups(iBk)
+    Next iBk
+    MsgBox "Falha durante a limpeza de setups orfaos: " & Err.Description & vbCrLf & _
+           "Todas as linhas alteradas foram restauradas ao estado original.", vbCritical, APS_TITULO
+    Err.Clear
+    falhaRecuperou = True
+
+Fim:
     If Not ws Is Nothing Then
         APS_Ocupado = APS_Ocupado - 1
         APS_Reproteger ws, est
@@ -3196,10 +3329,68 @@ End Sub
 
 ' Recolhe as linhas de Setup/Limpeza do formato com linha propria (marcador [[APS_..._DE:<id>]]): o tempo vai
 ' para a coluna Setup da producao-pai e a linha de Setup e limpa (mesma limpeza de APS_ExcluirOperacao).
+'==========================================================
+' [CORRECAO PEN-B-22] Estrutura usada para backup e rollback de
+' linhas afetadas pela migracao de setups. Armazena os valores
+' e formatos de cada celula da linha, permitindo restauracao
+' completa em caso de falha.
+'==========================================================
+Private Type tBackupLinha
+    linha As Long
+    nCol As Long
+    valores() As Variant
+    formatos() As String
+End Type
+
+' Faz backup completo de uma linha (valores e formatos de todas as colunas ateh a ultima com cabecalho).
+Private Function APS_BackupLinha(ByVal ws As Worksheet, ByVal linha As Long, ByRef b As tBackupLinha) As Boolean
+    Dim c As Long, ult As Long
+
+    On Error GoTo Falha
+
+    If linha < 2 Then Exit Function
+
+    b.linha = linha
+    ult = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    If ult < 1 Then ult = APS_NColDados(ws)
+    b.nCol = ult
+    ReDim b.valores(1 To ult)
+    ReDim b.formatos(1 To ult)
+
+    For c = 1 To ult
+        b.valores(c) = ws.Cells(linha, c).Value2
+        b.formatos(c) = ws.Cells(linha, c).NumberFormat
+    Next c
+
+    APS_BackupLinha = True
+    Exit Function
+
+Falha:
+    APS_BackupLinha = False
+End Function
+
+' Restaura uma linha a partir do backup salvo. Sempre tenta, mesmo que alguma celula falhe.
+Private Sub APS_RestaurarLinha(ByVal ws As Worksheet, ByRef b As tBackupLinha)
+    Dim c As Long
+
+    On Error Resume Next
+
+    If b.linha < 2 Then Exit Sub
+    For c = 1 To b.nCol
+        ws.Cells(b.linha, c).Value2 = b.valores(c)
+        ws.Cells(b.linha, c).NumberFormat = b.formatos(c)
+    Next c
+End Sub
+
 ' Corrige a origem da duplicidade; nao esconde nada. Sem producao-pai encontrada: a linha nao e tocada.
+' [CORRECAO PEN-B-22] Antes de qualquer alteracao, faz backup completo de cada linha de Setup
+' que sera migrada. Em caso de erro, restaura todas as linhas backupadas. A migracao e idempotente:
+' se a coluna Setup da producao ja tiver valor, o tempo nao e sobrescrito; se a linha de Setup
+' ja estiver vazia, APS_LerOps a ignora na proxima execucao.
 Public Sub APS_MigrarSetupsParaColuna()
     Dim ws As Worksheet, ops() As tOperacao, n As Long, i As Long, j As Long, pai As Long
     Dim cSet As Long, cObs As Long, est As Boolean, trav As Boolean, tem As Boolean, ult As Long, v As Variant
+    Dim backups() As tBackupLinha, nBk As Long, iBk As Long, falhaRecuperou As Boolean
 
     On Error GoTo Sai
 
@@ -3227,7 +3418,39 @@ Public Sub APS_MigrarSetupsParaColuna()
     n = APS_LerOps(ops)
     If n <= 0 Then Exit Sub
 
+    ' [PEN-B-22] Fase 1: coletar backup de cada linha de Setup que sera migrada, antes de qualquer alteracao.
+    ReDim backups(1 To IIf(n < 1, 1, n))
+    nBk = 0
     For i = 1 To n
+        If ops(i).linha > 0 And Len(ops(i).tipoAux) > 0 And Len(Trim$(ops(i).idPai)) > 0 Then
+            pai = 0
+            For j = 1 To n
+                If ops(j).linha > 0 And Len(ops(j).tipoAux) = 0 Then
+                    If APS_Ig(ops(j).id, ops(i).idPai) Then pai = j: Exit For
+                End If
+            Next j
+            If pai > 0 Then
+                nBk = nBk + 1
+                If Not APS_BackupLinha(ws, ops(i).linha, backups(nBk)) Then
+                    ' nao foi possivel fazer backup: nao pode migrar com seguranca
+                    MsgBox "N" & ChrW(227) & "o foi poss" & ChrW(237) & "vel fazer backup da linha " & ops(i).linha & _
+                           " antes da migra" & ChrW(231) & ChrW(227) & "o. A migra" & ChrW(231) & ChrW(227) & "o foi cancelada para evitar perda de dados.", _
+                           vbExclamation, APS_TITULO
+                    Exit Sub
+                End If
+            End If
+        End If
+    Next i
+
+    ' [PEN-B-22] Fase 2: aplica a migracao. Se qualquer etapa falhar, restaura todas as linhas backupadas.
+    For iBk = 1 To nBk
+        i = 0
+        ' localiza o indice correspondente na array ops
+        For i = 1 To n
+            If ops(i).linha = backups(iBk).linha Then Exit For
+        Next i
+        If i > n Then GoTo ProximoBk
+
         If ops(i).linha > 0 And Len(ops(i).tipoAux) > 0 And Len(Trim$(ops(i).idPai)) > 0 Then
             pai = 0
             For j = 1 To n
@@ -3248,11 +3471,26 @@ Public Sub APS_MigrarSetupsParaColuna()
                 APS_LimparLinha ws, ops(i).linha
             End If
         End If
-    Next i
+ProximoBk:
+    Next iBk
 
 Sai:
     On Error Resume Next
-    If trav Then
+    ' [PEN-B-22] Em caso de erro, restaura todas as linhas backupadas antes de sair.
+    If Err.Number <> 0 Then
+        For iBk = 1 To nBk
+            APS_RestaurarLinha ws, backups(iBk)
+        Next iBk
+        MsgBox "Falha durante a migra" & ChrW(231) & ChrW(227) & "o de setups: " & Err.Description & vbCrLf & _
+               "Todas as linhas alteradas foram restauradas ao estado original.", vbCritical, APS_TITULO
+        Err.Clear
+        falhaRecuperou = True
+    End If
+    If trav And Not falhaRecuperou Then
+        APS_Ocupado = APS_Ocupado - 1
+        APS_Reproteger ws, est
+    ElseIf trav Then
+        ' em caso de falha, restaura tambem as travas e protecoes
         APS_Ocupado = APS_Ocupado - 1
         APS_Reproteger ws, est
     End If
