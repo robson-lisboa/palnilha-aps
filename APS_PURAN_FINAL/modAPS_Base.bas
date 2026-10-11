@@ -90,6 +90,21 @@ Public Type tOperacao
     atraso As Double     ' tempo ADICIONAL de programacao (dias), no fim da producao. dur (em memoria) = duracao original + atraso
 End Type
 
+'----------------------------------------------------------
+' [CORRECAO] Tipo de backup de linha. Declarado ANTES do primeiro
+' procedimento (junto a tOperacao) para que o VBA consiga compilá-lo.
+' O erro "O tipo definido pelo usuário não foi definido" ocorria porque
+' este Type estava declarado na linha 3338, DEPOIS do primeiro procedimento
+' do modulo (APS_ST_CONCLUIDA, linha 113). Em VBA, todos os Type devem
+' constar antes do primeiro Sub/Function do modulo.
+'----------------------------------------------------------
+Private Type tBackupLinha
+    linha As Long
+    nCol As Long
+    valores() As Variant
+    formatos() As String
+End Type
+
 Public APS_OpsIgnoradas As Long
 
 ' Trava contra reentrada dos eventos da planilha (>0 = o proprio APS esta gravando)
@@ -3335,13 +3350,6 @@ End Sub
 ' e formatos de cada celula da linha, permitindo restauracao
 ' completa em caso de falha.
 '==========================================================
-Private Type tBackupLinha
-    linha As Long
-    nCol As Long
-    valores() As Variant
-    formatos() As String
-End Type
-
 ' Faz backup completo de uma linha (valores e formatos de todas as colunas ateh a ultima com cabecalho).
 Private Function APS_BackupLinha(ByVal ws As Worksheet, ByVal linha As Long, ByRef b As tBackupLinha) As Boolean
     Dim c As Long, ult As Long
