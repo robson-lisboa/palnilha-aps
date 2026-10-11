@@ -1,0 +1,776 @@
+Option Explicit
+
+'==========================================================
+' APS PURAN - Calendario de producao e OEE padrao da Mediseal
+' 1) Semana padrao: cada dia da semana tem a sua propria opcao e o seu proprio horario.
+' 2) Datas especificas: calendario mensal; cada data pode seguir o padrao, ser LIBERADA ou BLOQUEADA.
+'    A excecao vale somente para aquela data (dia/mes/ano) e tem prioridade sobre a semana padrao.
+' 3) Paradas e OEE padrao (inalterados).
+' Grava em CAL_SEM / CAL_EXC / CAL_PAR / OEE_PADRAO (os mesmos nomes que o motor ja le).
+'==========================================================
+
+Private WithEvents d01 As MSForms.CommandButton
+Private WithEvents d02 As MSForms.CommandButton
+Private WithEvents d03 As MSForms.CommandButton
+Private WithEvents d04 As MSForms.CommandButton
+Private WithEvents d05 As MSForms.CommandButton
+Private WithEvents d06 As MSForms.CommandButton
+Private WithEvents d07 As MSForms.CommandButton
+Private WithEvents d08 As MSForms.CommandButton
+Private WithEvents d09 As MSForms.CommandButton
+Private WithEvents d10 As MSForms.CommandButton
+Private WithEvents d11 As MSForms.CommandButton
+Private WithEvents d12 As MSForms.CommandButton
+Private WithEvents d13 As MSForms.CommandButton
+Private WithEvents d14 As MSForms.CommandButton
+Private WithEvents d15 As MSForms.CommandButton
+Private WithEvents d16 As MSForms.CommandButton
+Private WithEvents d17 As MSForms.CommandButton
+Private WithEvents d18 As MSForms.CommandButton
+Private WithEvents d19 As MSForms.CommandButton
+Private WithEvents d20 As MSForms.CommandButton
+Private WithEvents d21 As MSForms.CommandButton
+Private WithEvents d22 As MSForms.CommandButton
+Private WithEvents d23 As MSForms.CommandButton
+Private WithEvents d24 As MSForms.CommandButton
+Private WithEvents d25 As MSForms.CommandButton
+Private WithEvents d26 As MSForms.CommandButton
+Private WithEvents d27 As MSForms.CommandButton
+Private WithEvents d28 As MSForms.CommandButton
+Private WithEvents d29 As MSForms.CommandButton
+Private WithEvents d30 As MSForms.CommandButton
+Private WithEvents d31 As MSForms.CommandButton
+Private WithEvents d32 As MSForms.CommandButton
+Private WithEvents d33 As MSForms.CommandButton
+Private WithEvents d34 As MSForms.CommandButton
+Private WithEvents d35 As MSForms.CommandButton
+Private WithEvents d36 As MSForms.CommandButton
+Private WithEvents d37 As MSForms.CommandButton
+Private WithEvents d38 As MSForms.CommandButton
+Private WithEvents d39 As MSForms.CommandButton
+Private WithEvents d40 As MSForms.CommandButton
+Private WithEvents d41 As MSForms.CommandButton
+Private WithEvents d42 As MSForms.CommandButton
+Private WithEvents k1 As MSForms.CheckBox
+Private WithEvents k2 As MSForms.CheckBox
+Private WithEvents k3 As MSForms.CheckBox
+Private WithEvents k4 As MSForms.CheckBox
+Private WithEvents k5 As MSForms.CheckBox
+Private WithEvents k6 As MSForms.CheckBox
+Private WithEvents k7 As MSForms.CheckBox
+
+Private cel(1 To 42) As MSForms.CommandButton
+Private chkDia(1 To 7) As MSForms.CheckBox
+Private txtI(1 To 7) As MSForms.TextBox
+Private txtF(1 To 7) As MSForms.TextBox
+Private txtPar As MSForms.TextBox
+Private txtOEEPad As MSForms.TextBox
+Private lblMes As MSForms.Label
+Private lblSel As MSForms.Label
+Private WithEvents cmdPrev As MSForms.CommandButton
+Private WithEvents cmdNext As MSForms.CommandButton
+Private WithEvents cmdPadrao As MSForms.CommandButton
+Private WithEvents cmdLiberar As MSForms.CommandButton
+Private WithEvents cmdBloquear As MSForms.CommandButton
+Private WithEvents cmdSalvar As MSForms.CommandButton
+Private WithEvents cmdCancelar As MSForms.CommandButton
+
+Private mAno As Long
+Private mMes As Long
+Private mSel As Double
+Private mMontado As Boolean
+Private mNExc As Long
+Private mExcData() As Double
+Private mExcSt() As String       ' "S" = liberada, "N" = bloqueada
+Private mExcHor() As String      ' "hh:nn;hh:nn" proprio da excecao, ou "" (usa o horario do dia da semana)
+
+Private Function NomeDia(ByVal wd As Long) As String
+    Select Case wd
+        Case 1: NomeDia = "Segunda-feira"
+        Case 2: NomeDia = "Ter" & ChrW(231) & "a-feira"
+        Case 3: NomeDia = "Quarta-feira"
+        Case 4: NomeDia = "Quinta-feira"
+        Case 5: NomeDia = "Sexta-feira"
+        Case 6: NomeDia = "S" & ChrW(225) & "bado"
+        Case Else: NomeDia = "Domingo"
+    End Select
+End Function
+
+Private Function NomeMes(ByVal m As Long) As String
+    Select Case m
+        Case 1: NomeMes = "Janeiro"
+        Case 2: NomeMes = "Fevereiro"
+        Case 3: NomeMes = "Mar" & ChrW(231) & "o"
+        Case 4: NomeMes = "Abril"
+        Case 5: NomeMes = "Maio"
+        Case 6: NomeMes = "Junho"
+        Case 7: NomeMes = "Julho"
+        Case 8: NomeMes = "Agosto"
+        Case 9: NomeMes = "Setembro"
+        Case 10: NomeMes = "Outubro"
+        Case 11: NomeMes = "Novembro"
+        Case Else: NomeMes = "Dezembro"
+    End Select
+End Function
+
+Private Function Lb(ByVal nome As String, ByVal txt As String, ByVal x As Single, ByVal y As Single, _
+                    ByVal w As Single, ByVal h As Single) As MSForms.Label
+    Dim L As MSForms.Label
+    Set L = Me.Controls.Add("Forms.Label.1", nome, True)
+    L.Left = x: L.Top = y: L.Width = w: L.Height = h
+    L.Caption = txt
+    L.Font.Size = 9
+    L.WordWrap = True
+    Set Lb = L
+End Function
+
+Private Function tx(ByVal nome As String, ByVal x As Single, ByVal y As Single, ByVal w As Single, ByVal h As Single) As MSForms.TextBox
+    Dim t As MSForms.TextBox
+    Set t = Me.Controls.Add("Forms.TextBox.1", nome, True)
+    t.Left = x: t.Top = y: t.Width = w: t.Height = h
+    t.Font.Size = 9
+    Set tx = t
+End Function
+
+Private Function Bt(ByVal nome As String, ByVal txt As String, ByVal x As Single, ByVal y As Single, _
+                    ByVal w As Single, ByVal h As Single) As MSForms.CommandButton
+    Dim b As MSForms.CommandButton
+    Set b = Me.Controls.Add("Forms.CommandButton.1", nome, True)
+    b.Left = x: b.Top = y: b.Width = w: b.Height = h
+    b.Caption = txt
+    b.Font.Size = 9
+    Set Bt = b
+End Function
+
+Private Function NovaCel(ByVal i As Long) As MSForms.CommandButton
+    Dim b As MSForms.CommandButton, r As Long, c As Long
+    r = (i - 1) \ 7
+    c = (i - 1) Mod 7
+    Set b = Bt("dia" & i, "", 330 + c * 40, 84 + r * 30, 38, 28)
+    Set cel(i) = b
+    Set NovaCel = b
+End Function
+
+Private Sub UserForm_Initialize()
+    Dim i As Long, y As Single, L As MSForms.Label, itens() As String, p() As String, d As Long
+    Dim h1 As Double, h2 As Double, mi As Double, mf As Double
+
+    mMontado = False
+    Me.Caption = "Calend" & ChrW(225) & "rio de produ" & ChrW(231) & ChrW(227) & "o"
+    Me.Width = 690
+    Me.Height = 560
+    Me.StartUpPosition = 1
+
+    '--- 1. semana padrao -------------------------------------------------
+    Set L = Lb("lbT1", "1. Semana padr" & ChrW(227) & "o", 12, 8, 300, 16)
+    L.Font.Bold = True
+    Lb "lbT1b", "Marque os dias em que normalmente h" & ChrW(225) & " produ" & ChrW(231) & ChrW(227) & "o. Cada dia " & ChrW(233) & " independente e tem o seu hor" & ChrW(225) & "rio.", 12, 26, 300, 28
+    Lb "lbI", "In" & ChrW(237) & "cio", 128, 58, 50, 12
+    Lb "lbF", "Fim (00:00 = meia-noite)", 186, 58, 130, 12
+
+    y = 74
+    For i = 1 To 7
+        Set chkDia(i) = Me.Controls.Add("Forms.CheckBox.1", "chkDia" & i, True)
+        chkDia(i).Left = 12: chkDia(i).Top = y: chkDia(i).Width = 112: chkDia(i).Height = 18
+        chkDia(i).Caption = NomeDia(i)
+        chkDia(i).Font.Size = 9
+        Set txtI(i) = tx("txtI" & i, 128, y, 50, 18)
+        Set txtF(i) = tx("txtF" & i, 186, y, 50, 18)
+        y = y + 26
+    Next i
+    Set k1 = chkDia(1)
+    Set k2 = chkDia(2)
+    Set k3 = chkDia(3)
+    Set k4 = chkDia(4)
+    Set k5 = chkDia(5)
+    Set k6 = chkDia(6)
+    Set k7 = chkDia(7)
+
+    ' valores atuais (CAL_SEM): dia;S/N;inicio;fim
+    itens = Split(APS_CalSemanaTexto(), "|")
+    For i = 0 To UBound(itens)
+        p = Split(itens(i), ";")
+        If UBound(p) >= 1 Then
+            d = Val(p(0))
+            If d >= 1 And d <= 7 Then
+                chkDia(d).Value = (UCase$(Left$(p(1), 1)) = "S")
+                If UBound(p) >= 3 Then
+                    If APS_ParaHora(p(2)) >= 0 And APS_ParaHora(p(3)) >= 0 Then
+                        txtI(d).Text = p(2)
+                        txtF(d).Text = p(3)
+                    End If
+                End If
+            End If
+        End If
+    Next i
+    For i = 1 To 7
+        If Len(txtI(i).Text) = 0 Then txtI(i).Text = "06:00"
+        If Len(txtF(i).Text) = 0 Then txtF(i).Text = "22:00"
+    Next i
+
+    '--- paradas e OEE (inalterados) -------------------------------------
+    Set L = Lb("lbT3", "Paradas (per" & ChrW(237) & "odos sem produ" & ChrW(231) & ChrW(227) & "o) " & ChrW(8212) & " uma por linha:" & vbCr & "dd/mm/aaaa hh:mm;dd/mm/aaaa hh:mm", 12, 270, 310, 30)
+    L.Font.Bold = True
+    Set txtPar = tx("txtPar", 12, 304, 310, 90)
+    txtPar.Multiline = True: txtPar.EnterKeyBehavior = True: txtPar.ScrollBars = 2
+    txtPar.Text = APS_CalParadasTexto()
+
+    Set L = Lb("lbT4", "OEE padr" & ChrW(227) & "o da Mediseal (%) " & ChrW(8212) & " valor sugerido ao criar novas opera" & ChrW(231) & ChrW(245) & "es. N" & ChrW(227) & "o altera opera" & ChrW(231) & ChrW(245) & "es j" & ChrW(225) & " gravadas.", 12, 404, 310, 30)
+    L.Font.Bold = True
+    Set txtOEEPad = tx("txtOEEPad", 12, 438, 70, 18)
+    txtOEEPad.Text = APS_FmtQtd(APS_OEEPadrao() * 100#)
+
+    '--- 2. datas especificas --------------------------------------------
+    Set L = Lb("lbT2", "2. Datas espec" & ChrW(237) & "ficas (exce" & ChrW(231) & ChrW(245) & "es)", 330, 8, 330, 16)
+    L.Font.Bold = True
+    Lb "lbT2b", "Escolha o m" & ChrW(234) & "s, clique na data e use os bot" & ChrW(245) & "es. A exce" & ChrW(231) & ChrW(227) & "o vale s" & ChrW(243) & " para aquela data.", 330, 26, 330, 28
+
+    Set cmdPrev = Bt("cmdPrev", "<", 330, 54, 30, 22)
+    Set lblMes = Lb("lblMes", "", 364, 58, 190, 16)
+    lblMes.Font.Bold = True
+    lblMes.TextAlign = fmTextAlignCenter
+    Set cmdNext = Bt("cmdNext", ">", 558, 54, 30, 22)
+
+    For i = 1 To 7
+        Set L = Lb("lbDia" & i, Left$(NomeDia(i), 3), 330 + (i - 1) * 40, 70, 38, 12)
+        L.TextAlign = fmTextAlignCenter
+        L.Font.Bold = True
+    Next i
+
+    Set d01 = NovaCel(1)
+    Set d02 = NovaCel(2)
+    Set d03 = NovaCel(3)
+    Set d04 = NovaCel(4)
+    Set d05 = NovaCel(5)
+    Set d06 = NovaCel(6)
+    Set d07 = NovaCel(7)
+    Set d08 = NovaCel(8)
+    Set d09 = NovaCel(9)
+    Set d10 = NovaCel(10)
+    Set d11 = NovaCel(11)
+    Set d12 = NovaCel(12)
+    Set d13 = NovaCel(13)
+    Set d14 = NovaCel(14)
+    Set d15 = NovaCel(15)
+    Set d16 = NovaCel(16)
+    Set d17 = NovaCel(17)
+    Set d18 = NovaCel(18)
+    Set d19 = NovaCel(19)
+    Set d20 = NovaCel(20)
+    Set d21 = NovaCel(21)
+    Set d22 = NovaCel(22)
+    Set d23 = NovaCel(23)
+    Set d24 = NovaCel(24)
+    Set d25 = NovaCel(25)
+    Set d26 = NovaCel(26)
+    Set d27 = NovaCel(27)
+    Set d28 = NovaCel(28)
+    Set d29 = NovaCel(29)
+    Set d30 = NovaCel(30)
+    Set d31 = NovaCel(31)
+    Set d32 = NovaCel(32)
+    Set d33 = NovaCel(33)
+    Set d34 = NovaCel(34)
+    Set d35 = NovaCel(35)
+    Set d36 = NovaCel(36)
+    Set d37 = NovaCel(37)
+    Set d38 = NovaCel(38)
+    Set d39 = NovaCel(39)
+    Set d40 = NovaCel(40)
+    Set d41 = NovaCel(41)
+    Set d42 = NovaCel(42)
+
+    ' legenda
+    Set L = Lb("lg1", "Produ" & ChrW(231) & ChrW(227) & "o (padr" & ChrW(227) & "o da semana)", 330, 272, 150, 16)
+    L.BackColor = RGB(232, 245, 233): L.BorderStyle = fmBorderStyleSingle
+    Set L = Lb("lg2", "Sem produ" & ChrW(231) & ChrW(227) & "o (padr" & ChrW(227) & "o da semana)", 486, 272, 170, 16)
+    L.BackColor = RGB(238, 238, 238): L.BorderStyle = fmBorderStyleSingle
+    Set L = Lb("lg3", "LIBERADA (exce" & ChrW(231) & ChrW(227) & "o)", 330, 292, 150, 16)
+    L.BackColor = RGB(76, 175, 80): L.ForeColor = RGB(255, 255, 255): L.BorderStyle = fmBorderStyleSingle
+    Set L = Lb("lg4", "BLOQUEADA (exce" & ChrW(231) & ChrW(227) & "o)", 486, 292, 170, 16)
+    L.BackColor = RGB(229, 57, 53): L.ForeColor = RGB(255, 255, 255): L.BorderStyle = fmBorderStyleSingle
+
+    Set lblSel = Lb("lblSel", "", 330, 318, 330, 44)
+    lblSel.BorderStyle = fmBorderStyleSingle
+    lblSel.BackColor = RGB(248, 250, 252)
+
+    Set cmdPadrao = Bt("cmdPadrao", "Seguir padr" & ChrW(227) & "o", 330, 368, 100, 26)
+    Set cmdLiberar = Bt("cmdLiberar", "Liberar produ" & ChrW(231) & ChrW(227) & "o", 436, 368, 110, 26)
+    Set cmdBloquear = Bt("cmdBloquear", "Bloquear produ" & ChrW(231) & ChrW(227) & "o", 552, 368, 110, 26)
+
+    Lb "lbAjuda", "Como usar: 1) defina a semana padr" & ChrW(227) & "o; 2) para um s" & ChrW(225) & "bado, feriado ou folga espec" & ChrW(237) & "fico, clique na data e escolha Liberar ou Bloquear; 3) Salvar. O motor de planejamento usa exatamente esta configura" & ChrW(231) & ChrW(227) & "o. Dias liberados usam o hor" & ChrW(225) & "rio do dia da semana correspondente.", 330, 404, 330, 60
+
+    Set cmdSalvar = Bt("cmdSalvar", "Salvar", 460, 490, 100, 28)
+    cmdSalvar.Font.Bold = True
+    Set cmdCancelar = Bt("cmdCancelar", "Cancelar", 566, 490, 100, 28)
+
+    '--- excecoes atuais (CAL_EXC): dd/mm/aaaa;S/N;[hh:mm;hh:mm] ---------
+    mNExc = 0
+    ReDim mExcData(1 To 1): ReDim mExcSt(1 To 1): ReDim mExcHor(1 To 1)
+    itens = Split(APS_CalExcecoesTexto(), vbCrLf)
+    For i = 0 To UBound(itens)
+        p = Split(itens(i), ";")
+        If UBound(p) >= 1 Then
+            d = CLng(APS_ParaData(p(0)))
+            If d > 0 Then
+                h1 = -1: h2 = -1
+                If UBound(p) >= 3 Then h1 = APS_ParaHora(p(2)): h2 = APS_ParaHora(p(3))
+                If h1 >= 0 And h2 >= 0 Then
+                    DefinirExc d, IIf(UCase$(Left$(Trim$(p(1)), 1)) = "S", "S", "N"), Format$(h1, "hh:nn") & ";" & Format$(h2, "hh:nn")
+                Else
+                    DefinirExc d, IIf(UCase$(Left$(Trim$(p(1)), 1)) = "S", "S", "N"), ""
+                End If
+            End If
+        End If
+    Next i
+
+    ' mes inicial: o mes de planejamento (1_Planejamento!A1); sem ele, o mes atual
+    If APS_LimiteMes(mi, mf) Then
+        mAno = Year(CDate(mi)): mMes = Month(CDate(mi))
+    Else
+        mAno = Year(Date): mMes = Month(Date)
+    End If
+    mSel = 0
+    mMontado = True
+    AtualizarGrade
+End Sub
+
+'----------------------------------------------------------
+' Excecoes em memoria (uma por data; a ultima definida prevalece)
+'----------------------------------------------------------
+Private Function IdxExc(ByVal d As Double) As Long
+    Dim i As Long
+    For i = 1 To mNExc
+        If mExcData(i) = d Then IdxExc = i: Exit Function
+    Next i
+End Function
+
+Private Sub DefinirExc(ByVal d As Double, ByVal st As String, ByVal hor As String)
+    Dim i As Long
+    i = IdxExc(d)
+    If i = 0 Then
+        mNExc = mNExc + 1
+        If mNExc > UBound(mExcData) Then
+            ReDim Preserve mExcData(1 To mNExc + 8)
+            ReDim Preserve mExcSt(1 To mNExc + 8)
+            ReDim Preserve mExcHor(1 To mNExc + 8)
+        End If
+        i = mNExc
+    End If
+    mExcData(i) = d: mExcSt(i) = st: mExcHor(i) = hor
+End Sub
+
+Private Sub RemoverExc(ByVal d As Double)
+    Dim i As Long
+    i = IdxExc(d)
+    If i = 0 Then Exit Sub
+    mExcData(i) = mExcData(mNExc): mExcSt(i) = mExcSt(mNExc): mExcHor(i) = mExcHor(mNExc)
+    mNExc = mNExc - 1
+End Sub
+
+' 0 = padrao com producao | 1 = padrao sem producao | 2 = LIBERADA por excecao | 3 = BLOQUEADA por excecao
+Private Function EstadoData(ByVal d As Double) As Long
+    Dim i As Long
+    i = IdxExc(d)
+    If i > 0 Then
+        If mExcSt(i) = "S" Then EstadoData = 2 Else EstadoData = 3
+    ElseIf chkDia(Weekday(d, vbMonday)).Value Then
+        EstadoData = 0
+    Else
+        EstadoData = 1
+    End If
+End Function
+
+'----------------------------------------------------------
+' Calendario mensal
+'----------------------------------------------------------
+Private Sub AtualizarGrade()
+    Dim off As Long, nd As Long, i As Long, dia As Long, d As Double, est As Long
+
+    If Not mMontado Then Exit Sub
+
+    lblMes.Caption = NomeMes(mMes) & " / " & mAno
+    off = Weekday(DateSerial(mAno, mMes, 1), vbMonday) - 1
+    nd = Day(DateSerial(mAno, mMes + 1, 0))
+
+    For i = 1 To 42
+        dia = i - off
+        With cel(i)
+            If dia >= 1 And dia <= nd Then
+                d = CDbl(DateSerial(mAno, mMes, dia))
+                est = EstadoData(d)
+                .Enabled = True
+                .Caption = IIf(d = mSel, ">" & dia & "<", CStr(dia))
+                .Font.Bold = (est >= 2) Or (d = mSel)
+                Select Case est
+                    Case 0: .BackColor = RGB(232, 245, 233): .ForeColor = RGB(30, 30, 30)
+                    Case 1: .BackColor = RGB(238, 238, 238): .ForeColor = RGB(120, 120, 120)
+                    Case 2: .BackColor = RGB(76, 175, 80): .ForeColor = RGB(255, 255, 255)
+                    Case Else: .BackColor = RGB(229, 57, 53): .ForeColor = RGB(255, 255, 255)
+                End Select
+            Else
+                .Caption = ""
+                .Enabled = False
+                .BackColor = RGB(250, 250, 250)
+            End If
+        End With
+    Next i
+    AtualizarSelecao
+End Sub
+
+Private Sub AtualizarSelecao()
+    Dim wd As Long, est As Long, i As Long, t As String, hor As String
+
+    cmdPadrao.Enabled = (mSel > 0)
+    cmdLiberar.Enabled = (mSel > 0)
+    cmdBloquear.Enabled = (mSel > 0)
+    If mSel <= 0 Then
+        lblSel.Caption = "Nenhuma data selecionada. Clique em uma data do calend" & ChrW(225) & "rio."
+        Exit Sub
+    End If
+
+    wd = Weekday(mSel, vbMonday)
+    est = EstadoData(mSel)
+    t = "Data: " & NomeDia(wd) & ", " & Format$(mSel, "dd/mm/yyyy") & vbCr
+    If chkDia(wd).Value Then
+        t = t & "Semana padr" & ChrW(227) & "o: COM produ" & ChrW(231) & ChrW(227) & "o. "
+    Else
+        t = t & "Semana padr" & ChrW(227) & "o: SEM produ" & ChrW(231) & ChrW(227) & "o. "
+    End If
+    Select Case est
+        Case 0, 1: t = t & "Esta data segue o padr" & ChrW(227) & "o."
+        Case 2
+            i = IdxExc(mSel)
+            hor = mExcHor(i)
+            If Len(hor) = 0 Then hor = Trim$(txtI(wd).Text) & ";" & Trim$(txtF(wd).Text)
+            t = t & "LIBERADA por exce" & ChrW(231) & ChrW(227) & "o (" & Replace(hor, ";", " - ") & ")."
+        Case Else: t = t & "BLOQUEADA por exce" & ChrW(231) & ChrW(227) & "o."
+    End Select
+    lblSel.Caption = t
+End Sub
+
+Private Sub DiaClick(ByVal i As Long)
+    Dim off As Long, dia As Long
+    off = Weekday(DateSerial(mAno, mMes, 1), vbMonday) - 1
+    dia = i - off
+    If dia < 1 Or dia > Day(DateSerial(mAno, mMes + 1, 0)) Then Exit Sub
+    mSel = CDbl(DateSerial(mAno, mMes, dia))
+    AtualizarGrade
+End Sub
+
+Private Sub cmdPrev_Click()
+    mMes = mMes - 1
+    If mMes < 1 Then mMes = 12: mAno = mAno - 1
+    mSel = 0
+    AtualizarGrade
+End Sub
+
+Private Sub cmdNext_Click()
+    mMes = mMes + 1
+    If mMes > 12 Then mMes = 1: mAno = mAno + 1
+    mSel = 0
+    AtualizarGrade
+End Sub
+
+Private Sub cmdPadrao_Click()
+    If mSel <= 0 Then Exit Sub
+    RemoverExc mSel
+    AtualizarGrade
+End Sub
+
+Private Sub cmdLiberar_Click()
+    If mSel <= 0 Then Exit Sub
+    DefinirExc mSel, "S", ""
+    AtualizarGrade
+End Sub
+
+Private Sub cmdBloquear_Click()
+    If mSel <= 0 Then Exit Sub
+    DefinirExc mSel, "N", ""
+    AtualizarGrade
+End Sub
+
+'----------------------------------------------------------
+' Salvar
+'----------------------------------------------------------
+Private Sub cmdSalvar_Click()
+    Dim i As Long, j As Long, s As String, linhas() As String, p() As String, saida As String
+    Dim h1 As Double, h2 As Double, oee As Double, t As String, ordem() As Long, tmp As Long
+
+    ' semana: horario de cada dia validado (dia sem producao com horario invalido volta ao padrao 06:00-22:00)
+    For i = 1 To 7
+        h1 = APS_ParaHora(txtI(i).Text)
+        h2 = APS_ParaHora(txtF(i).Text)
+        If chkDia(i).Value Then
+            If h1 < 0 Or h2 < 0 Then
+                MsgBox "Hor" & ChrW(225) & "rio inv" & ChrW(225) & "lido em " & NomeDia(i) & " (use hh:mm).", vbExclamation, APS_TITULO
+                Exit Sub
+            End If
+            If h2 > 0 And h2 <= h1 Then
+                MsgBox "O fim deve ser maior que o in" & ChrW(237) & "cio em " & NomeDia(i) & ".", vbExclamation, APS_TITULO
+                Exit Sub
+            End If
+        Else
+            If h1 < 0 Or h2 < 0 Or (h2 > 0 And h2 <= h1) Then h1 = 6# / 24#: h2 = 22# / 24#
+        End If
+        s = s & i & ";" & IIf(chkDia(i).Value, "S", "N") & ";" & Format$(h1, "hh:nn") & ";" & Format$(h2, "hh:nn") & "|"
+    Next i
+    s = Left$(s, Len(s) - 1)
+
+    ' excecoes por data (ordenadas por data)
+    saida = ""
+    If mNExc > 0 Then
+        ReDim ordem(1 To mNExc)
+        For i = 1 To mNExc
+            ordem(i) = i
+        Next i
+        For i = 1 To mNExc - 1
+            For j = i + 1 To mNExc
+                If mExcData(ordem(j)) < mExcData(ordem(i)) Then tmp = ordem(i): ordem(i) = ordem(j): ordem(j) = tmp
+            Next j
+        Next i
+        For i = 1 To mNExc
+            j = ordem(i)
+            If Len(saida) > 0 Then saida = saida & "|"
+            saida = saida & Format$(mExcData(j), "dd/mm/yyyy") & ";" & mExcSt(j)
+            If mExcSt(j) = "S" And Len(mExcHor(j)) > 0 Then saida = saida & ";" & mExcHor(j)
+        Next i
+    End If
+
+    ' paradas
+    t = ""
+    linhas = Split(Replace(txtPar.Text, vbLf, ""), vbCr)
+    For i = 0 To UBound(linhas)
+        If Len(Trim$(linhas(i))) > 0 Then
+            p = Split(linhas(i), ";")
+            If UBound(p) < 1 Then
+                MsgBox "Parada inv" & ChrW(225) & "lida (linha " & (i + 1) & "): " & linhas(i), vbExclamation, APS_TITULO
+                Exit Sub
+            End If
+            h1 = APS_ParaDataHora(p(0))
+            h2 = APS_ParaDataHora(p(1))
+            If h1 < 0 Or h2 <= h1 Then
+                MsgBox "Parada inv" & ChrW(225) & "lida (linha " & (i + 1) & "): " & linhas(i), vbExclamation, APS_TITULO
+                Exit Sub
+            End If
+            If Len(t) > 0 Then t = t & "|"
+            t = t & Trim$(linhas(i))
+        End If
+    Next i
+
+    ' OEE padrao
+    oee = Val(Replace(Replace(Trim$(txtOEEPad.Text), "%", ""), ",", "."))
+    If oee <= 0 Or oee > 100 Then
+        MsgBox "OEE padr" & ChrW(227) & "o deve estar entre 1 e 100.", vbExclamation, APS_TITULO
+        Exit Sub
+    End If
+
+    APS_CfgGravar "CAL_SEM", s
+    APS_CfgGravar "CAL_EXC", saida
+    APS_CfgGravar "CAL_PAR", t
+    APS_CfgGravar "OEE_PADRAO", Replace(CStr(oee), ",", ".")
+    APS_CalRecarregar
+    Unload Me
+    APS_Atualizar True
+End Sub
+
+Private Sub cmdCancelar_Click()
+    Unload Me
+End Sub
+
+Private Sub d01_Click()
+    DiaClick 1
+End Sub
+
+Private Sub d02_Click()
+    DiaClick 2
+End Sub
+
+Private Sub d03_Click()
+    DiaClick 3
+End Sub
+
+Private Sub d04_Click()
+    DiaClick 4
+End Sub
+
+Private Sub d05_Click()
+    DiaClick 5
+End Sub
+
+Private Sub d06_Click()
+    DiaClick 6
+End Sub
+
+Private Sub d07_Click()
+    DiaClick 7
+End Sub
+
+Private Sub d08_Click()
+    DiaClick 8
+End Sub
+
+Private Sub d09_Click()
+    DiaClick 9
+End Sub
+
+Private Sub d10_Click()
+    DiaClick 10
+End Sub
+
+Private Sub d11_Click()
+    DiaClick 11
+End Sub
+
+Private Sub d12_Click()
+    DiaClick 12
+End Sub
+
+Private Sub d13_Click()
+    DiaClick 13
+End Sub
+
+Private Sub d14_Click()
+    DiaClick 14
+End Sub
+
+Private Sub d15_Click()
+    DiaClick 15
+End Sub
+
+Private Sub d16_Click()
+    DiaClick 16
+End Sub
+
+Private Sub d17_Click()
+    DiaClick 17
+End Sub
+
+Private Sub d18_Click()
+    DiaClick 18
+End Sub
+
+Private Sub d19_Click()
+    DiaClick 19
+End Sub
+
+Private Sub d20_Click()
+    DiaClick 20
+End Sub
+
+Private Sub d21_Click()
+    DiaClick 21
+End Sub
+
+Private Sub d22_Click()
+    DiaClick 22
+End Sub
+
+Private Sub d23_Click()
+    DiaClick 23
+End Sub
+
+Private Sub d24_Click()
+    DiaClick 24
+End Sub
+
+Private Sub d25_Click()
+    DiaClick 25
+End Sub
+
+Private Sub d26_Click()
+    DiaClick 26
+End Sub
+
+Private Sub d27_Click()
+    DiaClick 27
+End Sub
+
+Private Sub d28_Click()
+    DiaClick 28
+End Sub
+
+Private Sub d29_Click()
+    DiaClick 29
+End Sub
+
+Private Sub d30_Click()
+    DiaClick 30
+End Sub
+
+Private Sub d31_Click()
+    DiaClick 31
+End Sub
+
+Private Sub d32_Click()
+    DiaClick 32
+End Sub
+
+Private Sub d33_Click()
+    DiaClick 33
+End Sub
+
+Private Sub d34_Click()
+    DiaClick 34
+End Sub
+
+Private Sub d35_Click()
+    DiaClick 35
+End Sub
+
+Private Sub d36_Click()
+    DiaClick 36
+End Sub
+
+Private Sub d37_Click()
+    DiaClick 37
+End Sub
+
+Private Sub d38_Click()
+    DiaClick 38
+End Sub
+
+Private Sub d39_Click()
+    DiaClick 39
+End Sub
+
+Private Sub d40_Click()
+    DiaClick 40
+End Sub
+
+Private Sub d41_Click()
+    DiaClick 41
+End Sub
+
+Private Sub d42_Click()
+    DiaClick 42
+End Sub
+
+Private Sub k1_Click()
+    AtualizarGrade
+End Sub
+
+Private Sub k2_Click()
+    AtualizarGrade
+End Sub
+
+Private Sub k3_Click()
+    AtualizarGrade
+End Sub
+
+Private Sub k4_Click()
+    AtualizarGrade
+End Sub
+
+Private Sub k5_Click()
+    AtualizarGrade
+End Sub
+
+Private Sub k6_Click()
+    AtualizarGrade
+End Sub
+
+Private Sub k7_Click()
+    AtualizarGrade
+End Sub
+
