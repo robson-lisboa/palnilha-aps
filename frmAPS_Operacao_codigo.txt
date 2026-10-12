@@ -38,6 +38,7 @@ Private WithEvents cboSetupParam As MSForms.ComboBox
 Private lblSetupInfo As MSForms.Label
 
 Private mBloq As Long
+Private mRecalc As Boolean
 
 ' Atraso: tempo ADICIONAL de programacao no fim da producao (nao altera a quantidade nem a duracao original)
 Private WithEvents txtAtraso As MSForms.TextBox
@@ -541,6 +542,7 @@ Private Sub AtualizarSetupCombo()
 
     If cboSetupParam Is Nothing Then Exit Sub
 
+    mBloq = mBloq + 1          ' limpar/preencher a lista nao deve disparar a previa a cada item
     atual = cboSetupParam.Text
     cboSetupParam.Clear
 
@@ -552,6 +554,7 @@ Private Sub AtualizarSetupCombo()
     End If
 
     SelecionarItem cboSetupParam, atual, False
+    mBloq = mBloq - 1
 
     AtualizarSetupInfo
 End Sub
@@ -825,7 +828,22 @@ Private Function IniProducao(ByVal inicioPrep As Double, ByVal setupMin As Long)
     IniProducao = APS_ArredMin(t)
 End Function
 
+' Protege contra chamadas repetidas/aninhadas (eventos dos controles) e nunca deixa uma falha da previa travar o formulario
 Private Sub Recalcular()
+    If mRecalc Then Exit Sub
+    mRecalc = True
+    On Error GoTo Falha
+    RecalcularInterno
+    mRecalc = False
+    Exit Sub
+Falha:
+    mRecalc = False
+    On Error Resume Next
+    lblAviso.ForeColor = RGB(192, 0, 0)
+    lblAviso.Caption = "Falha ao calcular a pr" & ChrW(233) & "via: " & Err.Description
+End Sub
+
+Private Sub RecalcularInterno()
     Dim dur As Double
     Dim info As String
     Dim velBase As Double
@@ -845,6 +863,10 @@ Private Sub Recalcular()
     Dim qtd As Long
     Dim lista As String
     Dim stMin As Long, pIni As Double, pa As Long
+
+    ' a tela ainda esta sendo montada (eventos de Setup disparam antes dos labels existirem)
+    If lblCalc Is Nothing Or lblAviso Is Nothing Or cboMaquina Is Nothing Then Exit Sub
+    If txtData Is Nothing Or txtInicio Is Nothing Or txtAtraso Is Nothing Then Exit Sub
 
     If Len(cboMaquina.Text) = 0 Then
         lblCalc.Caption = ""
