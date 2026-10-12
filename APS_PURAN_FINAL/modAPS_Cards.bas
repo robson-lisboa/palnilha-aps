@@ -1,4 +1,4 @@
-Attribute VB_Name = "modAPS_Cards"
+
 
 Option Explicit
 
@@ -81,6 +81,7 @@ End Sub
 Public Sub APS_EditarDuracaoAuto(ByVal id As String)
     Dim ops() As tOperacao, n As Long, k As Long, i As Long, s As String, d As Double, mins As Long
     Dim mudou() As Boolean, calOk As Boolean, ws As Worksheet, est As Boolean, trav As Boolean, msg As String
+    Dim pk As Long, w As Double, par As tOperacao
 
     On Error GoTo Falha
     n = APS_LerOps(ops)
@@ -90,7 +91,7 @@ Public Sub APS_EditarDuracaoAuto(ByVal id As String)
     If k = 0 Then Exit Sub
 
     mins = CLng(Round(ops(k).dur * 1440#, 0))
-    s = InputBox(ops(k).Produto & " - " & ops(k).Maquina & " (" & ops(k).lote & ")" & vbCrLf & vbCrLf & _
+    s = InputBox(ops(k).Produto & " - " & ops(k).maquina & " (" & ops(k).lote & ")" & vbCrLf & vbCrLf & _
                  "Dura" & ChrW(231) & ChrW(227) & "o (hh:mm). Para remover este Setup/Limpeza, desmarque a op" & ChrW(231) & ChrW(227) & "o Setup / Limpeza no formul" & ChrW(225) & "rio da produ" & ChrW(231) & ChrW(227) & "o.", _
                  APS_TITULO, Format$(mins \ 60, "0") & ":" & Format$(mins Mod 60, "00"))
     If Len(Trim$(s)) = 0 Then Exit Sub
@@ -98,6 +99,34 @@ Public Sub APS_EditarDuracaoAuto(ByVal id As String)
     If d <= 0 Then
         MsgBox "Dura" & ChrW(231) & ChrW(227) & "o inv" & ChrW(225) & "lida (use hh:mm).", vbExclamation, APS_TITULO
         Exit Sub
+    End If
+
+    ' Preparacao vinculada a uma producao: o INICIO DA PREPARACAO fica onde esta e a PRODUCAO anda
+    ' (aumentar o Setup empurra a producao e as seguintes em cascata; reduzir antecipa). Nunca puxa o Setup para tras.
+    pk = 0
+    If Len(ops(k).idPai) > 0 Then
+        For i = 1 To n
+            If APS_Ig(ops(i).id, ops(k).idPai) Then pk = i: Exit For
+        Next i
+    End If
+    If pk > 0 Then
+        If APS_Ativa(ops(pk)) Then
+            APS_CalRecarregar
+            w = APS_ProximoDisponivel(ops(k).ini)
+            If w >= 0 Then w = APS_AdicionarTrabalho(w, d)
+            If w >= 0 Then w = APS_ProximoDisponivel(w)
+            If w < 0 Then
+                MsgBox "N" & ChrW(227) & "o h" & ChrW(225) & " calend" & ChrW(225) & "rio de trabalho suficiente para esta dura" & ChrW(231) & ChrW(227) & "o. Nada foi alterado.", vbExclamation, APS_TITULO
+                Exit Sub
+            End If
+            par = ops(pk)
+            par.ini = APS_ArredMin(w)
+            w = APS_AdicionarTrabalho(par.ini, par.dur)
+            If w < 0 Then w = par.ini + par.dur
+            par.fim = APS_ArredMin(w)
+            APS_SalvarOperacao par, False, d
+            Exit Sub
+        End If
     End If
 
     ops(k).dur = d
@@ -486,7 +515,7 @@ Public Sub APS_DetectarConflitos(ByRef ops() As tOperacao, ByVal n As Long, ByRe
         If APS_Ativa(ops(i)) Then
             For j = i + 1 To n
                 If APS_Ativa(ops(j)) Then
-                    If APS_Ig(ops(i).Maquina, ops(j).Maquina) Then
+                    If APS_Ig(ops(i).maquina, ops(j).maquina) Then
                         If APS_Sobrepoe(ops(i), ops(j)) Then
                             conf(i) = True
                             conf(j) = True
@@ -504,7 +533,7 @@ Public Function APS_ListaConflitos(ByRef ops() As tOperacao, ByVal n As Long, By
     For j = 1 To n
         If j <> k Then
             If APS_Ativa(ops(j)) Then
-                If APS_Ig(ops(j).Maquina, ops(k).Maquina) Then
+                If APS_Ig(ops(j).maquina, ops(k).maquina) Then
                     If APS_Sobrepoe(ops(j), ops(k)) Then
                         If Len(s) > 0 Then s = s & ", "
                         s = s & ops(j).Produto & " " & ops(j).lote & " (" & Format$(ops(j).ini, "dd/mm hh:nn") & "-" & Format$(ops(j).fim, "dd/mm hh:nn") & ")"
@@ -1103,6 +1132,8 @@ Public Function APS_DiasVisiveis(ByRef primeiro As Double, ByRef ultimo As Doubl
     ultimo = mDias(mNDias).Data
     APS_DiasVisiveis = True
 End Function
+
+
 
 
 
